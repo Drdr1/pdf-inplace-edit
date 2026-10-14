@@ -77,7 +77,7 @@ $('apply').onclick = async () => {
   if (!editor || !current) return;
   try {
     const r = editor.replaceLine(0, current.id, input.value);
-    report.textContent = r.runs.map((x) => `“${x.text}” → ${x.font} (${x.mode})`).join('\n') + (r.warnings.length ? '\n⚠ ' + r.warnings.join('\n⚠ ') : '');
+    report.textContent = r.runs.map((x) => `“${x.text}” → ${x.font} (${x.mode})`).join('\n') + (r.warnings.length ? '\n⚠ ' + r.warnings.join('\n⚠ ') : '') + (r.notes.length ? '\nℹ ' + r.notes.join('\nℹ ') : '');
     const bytes = await editor.save();
     current = editor.lines(0)[current.id];
     await render(bytes);

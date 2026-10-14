@@ -75,6 +75,8 @@ export interface Glyph {
   actualSpan: number | undefined;
   actualText: string | undefined;
   isSpaceCode: boolean;
+  /** op index of the BT that opened this glyph's text object */
+  btIndex: number;
 }
 
 export interface Interpretation {
@@ -95,6 +97,7 @@ export function interpret(ops: Op[], fonts: Map<string, PdfFont>, resolveProps?:
   let tm: Mat = [...IDENT];
   let tlm: Mat = [...IDENT];
   let inBT = false;
+  let btIndex = -1;
   let mc: McEntry[] = [];
   let spanSeq = 0;
   const states: OpState[] = [];
@@ -124,7 +127,7 @@ export function interpret(ops: Op[], fonts: Map<string, PdfFont>, resolveProps?:
       const [x2, y2] = apply(base, tx, 0);
       const g: Glyph = {
         opIndex, index: glyphs.length, code, font, size: ts.size, trm, x, y, dx: x2 - x, dy: y2 - y, advTs,
-        actualSpan: span?.spanId, actualText: span?.actualText, isSpaceCode,
+        actualSpan: span?.spanId, actualText: span?.actualText, isSpaceCode, btIndex,
       };
       glyphs.push(g);
       if (span) spans.get(span.spanId)!.glyphs.push(g.index);
@@ -152,6 +155,7 @@ export function interpret(ops: Op[], fonts: Map<string, PdfFont>, resolveProps?:
         break;
       case 'BT':
         inBT = true;
+        btIndex = i;
         tm = [...IDENT];
         tlm = [...IDENT];
         break;

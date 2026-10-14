@@ -40,6 +40,8 @@ export interface PdfFont {
   encodeSimple?: (cp: number) => number | undefined;
   /** Standard-14 font (not embedded). */
   standard14: boolean;
+  /** FontDescriptor Flags bit 3: codes address the font's built-in (symbol) cmap directly. */
+  symbolic: boolean;
   splitCodes(bytes: Uint8Array): number[];
   /** CIDToGIDMap as an explicit array when it is a stream; undefined = Identity. */
   cidToGidArray: Uint16Array | undefined;
@@ -167,7 +169,7 @@ export function readFont(ctx: PDFContext, resName: string, ref: PDFRef | undefin
       key, ref, dict, kind: 'type0', baseFont, bold: bold || (fdWeight ?? 0) >= 600, identity,
       widthOf: (c) => widths.get(c) ?? dw,
       gidOf: (c) => (cidToGidArray ? cidToGidArray[c] : c),
-      toUnicode, hasToUnicodeStream: !!tuBytes, program, standard14: false,
+      toUnicode, hasToUnicodeStream: !!tuBytes, program, standard14: false, symbolic: false,
       splitCodes: (b) => {
         const out: number[] = [];
         for (let k = 0; k + 1 < b.length; k += 2) out.push((b[k]! << 8) | b[k + 1]!);
@@ -220,6 +222,7 @@ export function readFont(ctx: PDFContext, resName: string, ref: PDFRef | undefin
   return {
     key, ref, dict, kind: 'simple', baseFont, bold, identity: false,
     widthOf, gidOf: (c) => c, toUnicode: codeToUni, hasToUnicodeStream: !!tuBytes, program, standard14,
+    symbolic: ((num(lookup(ctx, fd?.get(PDFName.of('Flags')))) ?? 0) & 4) !== 0,
     encodeSimple: (cp) => fromUni.get(cp),
     splitCodes: (b) => Array.from(b), cidToGidArray: undefined, descendant: undefined,
   };

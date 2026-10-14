@@ -45,7 +45,7 @@ export function baseDirection(text: string): 'rtl' | 'ltr' {
  * Rebuild logical order from clusters listed in visual (left-to-right) order.
  * Each cluster's own text is already logical (ActualText / ToUnicode).
  */
-export function visualToLogical(clusters: string[]): { text: string; dir: 'rtl' | 'ltr' } {
+export function visualToLogical(clusters: string[]): { text: string; dir: 'rtl' | 'ltr'; order: number[] } {
   const dir = baseDirection(clusters.join(''));
   const cls = clusters.map(classOf);
   const order = clusters.map((_, k) => k);
@@ -81,5 +81,5 @@ export function visualToLogical(clusters: string[]): { text: string; dir: 'rtl' 
   let seq: number[];
   if (dir === 'rtl') seq = reverseRuns(order.reverse(), (c) => c === 'ltr' || c === 'num', true);
   else seq = reverseRuns(order, (c) => c === 'rtl', false);
-  return { text: seq.map((k) => clusters[k]).join(''), dir };
+  return { text: seq.map((k) => clusters[k]).join(''), dir, order: seq };
 }

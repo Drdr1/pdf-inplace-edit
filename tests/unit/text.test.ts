@@ -16,6 +16,7 @@ describe('visualToLogical', () => {
   it('reverses RTL, keeps embedded LTR runs', () => {
     // visual left-to-right of "السعر 250 PDF"
     const visual = ['P', 'D', 'F', ' ', '2', '5', '0', ' ', 'ر', 'ع', 'س', 'ل', 'ا'];
-    expect(visualToLogical(visual)).toEqual({ text: 'السعر 250 PDF', dir: 'rtl' });
+    const r = visualToLogical(visual);
+    expect([r.text, r.dir]).toEqual(['السعر 250 PDF', 'rtl']);
   });
 });
