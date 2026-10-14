@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { PdfTextEditor, type LineInfo } from '../../src/engine';
+import { PdfTextEditor } from '../../src/engine';
 import { nodeDeps } from '../node-deps';
-import { qpdfCheck, pdftotext, rasterise, diffRegion } from '../helpers';
+import { qpdfCheck, pdftotext, rasterise, diffRegion, diffLine } from '../helpers';
 // @ts-expect-error plain JS module
 import { render, sampleHtml, SAMPLE_LINES } from '../../scripts/make-fixtures.mjs';
 
@@ -24,9 +24,6 @@ function normaliseBidi(s: string): string {
   return s.split(' ').filter(Boolean).sort().join(' ');
 }
 
-function union(a: LineInfo['bbox'], b: LineInfo['bbox']): LineInfo['bbox'] {
-  return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
-}
 
 describe('fixture analysis', () => {
   it('reads all four lines in logical order with direction', async () => {
@@ -88,11 +85,12 @@ describe.each([
     expect(b1.y0).toBeCloseTo(b0.y0, 1);
   });
 
-  it('renders like Chromium typesetting the new text (shaping, joining, order)', () => {
-    const a = rasterise(res.out);
-    const b = rasterise(ref);
-    const box = union(res.after[line]!.bbox, res.before[line]!.bbox);
-    expect(diffRegion(a, b, box)).toBeLessThan(0.08);
+  it('renders like Chromium typesetting the new text (shaping, joining, order)', async () => {
+    // locate the line in the reference independently: its page position may
+    // differ slightly between Chromium versions
+    const refLines = (await PdfTextEditor.open(ref, await nodeDeps())).lines(0);
+    const align = res.after[line]!.dir === 'rtl' ? 'right' : 'left';
+    expect(diffLine(rasterise(res.out), res.after[line]!.bbox, rasterise(ref), refLines[line]!.bbox, align)).toBeLessThan(0.08);
   });
 
   it('leaves every other line pixel-identical', () => {

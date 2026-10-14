@@ -1,6 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { qpdfCheck, pdftotext, rasterise, diffRegion } from '../helpers';
+import { qpdfCheck, pdftotext, rasterise, diffLine } from '../helpers';
+import { PdfTextEditor } from '../../src/engine';
+import { nodeDeps } from '../node-deps';
 // @ts-expect-error plain JS module
 import { render, sampleHtml, SAMPLE_LINES } from '../../scripts/make-fixtures.mjs';
 
@@ -50,9 +52,11 @@ for (const c of cases) {
     const orig = pdftotext(new Uint8Array(readFileSync('fixtures/sample.pdf')));
     expect(words(got[c.line]!)).toBe(words(expected));
     orig.forEach((t, k) => k !== c.line && expect(got[k]).toBe(t));
-    const box = before[c.line]!.bbox;
-    const pad = { x0: box.x0 - 40, y0: box.y0, x1: box.x1 + 40, y1: box.y1 };
-    expect(diffRegion(rasterise(bytes), rasterise(ref), pad)).toBeLessThan(0.08);
+    const deps = await nodeDeps();
+    const mine = (await PdfTextEditor.open(bytes, deps)).lines(0)[c.line]!;
+    const theirs = (await PdfTextEditor.open(ref, deps)).lines(0)[c.line]!;
+    expect(diffLine(rasterise(bytes), mine.bbox, rasterise(ref), theirs.bbox, mine.dir === 'rtl' ? 'right' : 'left')).toBeLessThan(0.08);
+    void before;
     expect(external).toEqual([]);
   });
 }

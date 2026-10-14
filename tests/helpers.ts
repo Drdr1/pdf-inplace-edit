@@ -82,3 +82,57 @@ export function diffRegion(a: Gray, b: Gray, box: { x0: number; y0: number; x1: 
     }
   return ink ? diff / ink : 0;
 }
+
+/**
+ * Compare one text line in two renderings that may sit at slightly different
+ * page positions (e.g. a different Chromium version laid out the reference).
+ * Each line is cropped to its own ink box, the crops are aligned on the given
+ * edge, and the fraction of mismatching ink pixels is returned.
+ */
+export function diffLine(
+  a: Gray,
+  boxA: { x0: number; y0: number; x1: number; y1: number },
+  b: Gray,
+  boxB: { x0: number; y0: number; x1: number; y1: number },
+  align: 'left' | 'right',
+  dpi = 110,
+  pageH = 841.92,
+): number {
+  const ink = (g: Gray, box: typeof boxA) => {
+    const k = dpi / 72;
+    const X0 = Math.max(0, Math.floor(box.x0 * k) - 4);
+    const X1 = Math.min(g.w, Math.ceil(box.x1 * k) + 4);
+    const Y0 = Math.max(0, Math.floor((pageH - box.y1) * k) - 4);
+    const Y1 = Math.min(g.h, Math.ceil((pageH - box.y0) * k) + 4);
+    let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+    for (let y = Y0; y < Y1; y++)
+      for (let x = X0; x < X1; x++)
+        if (g.px[y * g.w + x]! < 128) {
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        }
+    return { x0, y0, x1, y1 };
+  };
+  const ia = ink(a, boxA);
+  const ib = ink(b, boxB);
+  const w = Math.max(ia.x1 - ia.x0, ib.x1 - ib.x0) + 1;
+  const h = Math.max(ia.y1 - ia.y0, ib.y1 - ib.y0) + 1;
+  const ox0 = align === 'left' ? ib.x0 - ia.x0 : ib.x1 - ia.x1;
+  const oy0 = ib.y1 - ia.y1; // align bottoms
+  const sx = align === 'left' ? ia.x0 : ia.x1 - w + 1;
+  // ink boxes can be off by a pixel or two (anti-aliasing, a different
+  // descender); take the best alignment in a small window
+  let best = 1;
+  for (let dy = -2; dy <= 2; dy++)
+    for (let dx = -2; dx <= 2; dx++) {
+      let diff = 0, inkCount = 0;
+      for (let y = ia.y1 - h - 1; y <= ia.y1 + 2; y++)
+        for (let x = sx - 2; x < sx + w + 2; x++) {
+          const pa = a.px[y * a.w + x] ?? 255;
+          const pb = b.px[(y + oy0 + dy) * b.w + (x + ox0 + dx)] ?? 255;
+          if (pa < 128 || pb < 128) inkCount++;
+          if (Math.abs(pa - pb) > 96) diff++;
+        }
+      if (inkCount) best = Math.min(best, diff / inkCount);
+    }
+  return best;
+}
