@@ -320,9 +320,12 @@ export class PdfTextEditor {
 
   private groupLines(pm: PageModel): Line[] {
     const lines: Line[] = [];
-    let cur: { glyphs: Glyph[]; u: [number, number]; v: [number, number]; perps: number[]; size: number } | undefined;
+    // Base glyphs (non-zero advance) define the baseline. Zero-advance glyphs
+    // are positioned marks (Arabic dots, harakat) that producers may place
+    // well above/below the baseline; they join the line by pen continuity.
+    let cur: { glyphs: Glyph[]; u: [number, number]; v: [number, number]; basePerps: number[]; allPerps: number[]; lastAlong: number } | undefined;
     const flush = (): void => {
-      if (cur && cur.glyphs.length) lines.push(this.finishLine(pm, lines.length, cur.glyphs, cur.u, cur.v, cur.perps));
+      if (cur && cur.glyphs.length) lines.push(this.finishLine(pm, lines.length, cur.glyphs, cur.u, cur.v, cur.basePerps.length ? cur.basePerps : cur.allPerps));
       cur = undefined;
     };
     for (const g of pm.interp.glyphs) {
@@ -333,17 +336,24 @@ export class PdfTextEditor {
       const v: [number, number] = [g.trm[2] / vl, g.trm[3] / vl];
       const perp = g.x * v[0] + g.y * v[1];
       const along = g.x * u[0] + g.y * u[1];
+      const isMark = Math.abs(g.dx * u[0] + g.dy * u[1]) < 0.05 * vl;
       if (cur) {
-        const sameDir = Math.abs(u[0] - cur.u[0]) < 1e-3 && Math.abs(u[1] - cur.u[1]) < 1e-3;
-        const med = median(cur.perps);
-        const alongs = cur.glyphs.map((x) => x.x * cur!.u[0] + x.y * cur!.u[1]);
-        const lo = Math.min(...alongs) - 6 * vl;
-        const hi = Math.max(...alongs) + 6 * vl;
-        if (!sameDir || Math.abs(perp - med) > 0.45 * vl || along < lo || along > hi) flush();
+        const c = cur;
+        const sameDir = Math.abs(u[0] - c.u[0]) < 1e-3 && Math.abs(u[1] - c.u[1]) < 1e-3;
+        const alongs = c.glyphs.map((x) => x.x * c.u[0] + x.y * c.u[1]);
+        const inSpan = along >= Math.min(...alongs) - 6 * vl && along <= Math.max(...alongs) + 6 * vl;
+        let joins: boolean;
+        if (!sameDir || !inSpan) joins = false;
+        else if (isMark) joins = Math.abs(perp - median(c.basePerps.length ? c.basePerps : c.allPerps)) <= 1.1 * vl && Math.abs(along - c.lastAlong) <= 2 * vl;
+        else if (c.basePerps.length) joins = Math.abs(perp - median(c.basePerps)) <= 0.45 * vl;
+        else joins = Math.abs(perp - median(c.allPerps)) <= 1.1 * vl; // line so far is only marks
+        if (!joins) flush();
       }
-      if (!cur) cur = { glyphs: [], u, v, perps: [], size: vl };
+      if (!cur) cur = { glyphs: [], u, v, basePerps: [], allPerps: [], lastAlong: along };
       cur.glyphs.push(g);
-      cur.perps.push(perp);
+      cur.allPerps.push(perp);
+      if (!isMark) cur.basePerps.push(perp);
+      cur.lastAlong = along + g.dx * u[0] + g.dy * u[1];
     }
     flush();
     return lines;

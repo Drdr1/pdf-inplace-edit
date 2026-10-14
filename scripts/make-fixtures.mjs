@@ -24,6 +24,13 @@ export const SAMPLE_LINES = {
   mixed: 'السعر 250 درهم لملف PDF واحد',
 };
 
+export const EXPECTED = {
+  heading: { heading: 'Annual Report Summary' },
+  arabic: { arabic: 'مرحبا بكم في التقرير الشهري للشركة' },
+  'arabic-in-subset': { arabic: 'مرحبا بكم في التقرير التقرير للشركة' },
+  mixed: { mixed: 'السعر 1,499 درهم لملف Word واحد' },
+};
+
 export function sampleHtml(lines = SAMPLE_LINES) {
   return `<h1>${lines.heading}</h1><p>${lines.body}</p><p class="ar">${lines.arabic}</p><p class="ar">${lines.mixed}</p>`;
 }
@@ -49,5 +56,9 @@ export async function render(html, out) {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   mkdirSync('fixtures', { recursive: true });
   await render(sampleHtml(), 'fixtures/sample.pdf');
-  console.log('fixtures/sample.pdf written');
+  // golden references: the same Chromium typesetting the edited sentences.
+  // Committed, so golden tests do not depend on the CI's Chromium version.
+  mkdirSync('fixtures/expected', { recursive: true });
+  for (const [name, patch] of Object.entries(EXPECTED)) await render(sampleHtml({ ...SAMPLE_LINES, ...patch }), `fixtures/expected/${name}.pdf`);
+  console.log('fixtures written');
 }

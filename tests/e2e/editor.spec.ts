@@ -25,9 +25,9 @@ async function boot(page: Page): Promise<string[]> {
 }
 
 const cases = [
-  { name: 'English bold heading', line: 0, from: 'Quarterly', to: 'Annual', key: 'heading' as const },
-  { name: 'Arabic word in place', line: 2, from: 'السنوي', to: 'الشهري', key: 'arabic' as const },
-  { name: 'mixed Arabic, English and digits', line: 3, from: '250 درهم لملف PDF', to: '1,499 درهم لملف Word', key: 'mixed' as const },
+  { name: 'English bold heading', line: 0, from: 'Quarterly', to: 'Annual', key: 'heading' as const, ref: 'heading' },
+  { name: 'Arabic word in place', line: 2, from: 'السنوي', to: 'الشهري', key: 'arabic' as const, ref: 'arabic' },
+  { name: 'mixed Arabic, English and digits', line: 3, from: '250 درهم لملف PDF', to: '1,499 درهم لملف Word', key: 'mixed' as const, ref: 'mixed' },
 ];
 
 for (const c of cases) {
@@ -43,7 +43,7 @@ for (const c of cases) {
     const bytes = new Uint8Array(out);
 
     const expected = SAMPLE_LINES[c.key].replace(c.from, c.to);
-    const ref: Uint8Array = await render(sampleHtml({ ...SAMPLE_LINES, [c.key]: expected } as Lines));
+    const ref = new Uint8Array(readFileSync(`fixtures/expected/${c.ref}.pdf`));
 
     expect(() => qpdfCheck(bytes)).not.toThrow();
     for (const r of report.runs) expect(['original', 'original-extended']).toContain(r.mode);

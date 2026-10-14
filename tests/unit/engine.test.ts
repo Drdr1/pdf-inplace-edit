@@ -7,8 +7,8 @@ import { qpdfCheck, pdftotext, rasterise, diffRegion, diffLine } from '../helper
 import { render, sampleHtml, SAMPLE_LINES } from '../../scripts/make-fixtures.mjs';
 
 const sample = new Uint8Array(readFileSync('fixtures/sample.pdf'));
-type Lines = typeof SAMPLE_LINES;
-const reference = async (patch: Partial<Lines>): Promise<Uint8Array> => render(sampleHtml({ ...SAMPLE_LINES, ...patch })) as Promise<Uint8Array>;
+// golden references, typeset by the same Chromium that produced the fixture
+const golden = (name: string): Uint8Array => new Uint8Array(readFileSync(`fixtures/expected/${name}.pdf`));
 
 async function edit(lineIdx: number, from: string, to: string, deps?: Awaited<ReturnType<typeof nodeDeps>>) {
   const ed = await PdfTextEditor.open(sample, deps ?? (await nodeDeps()));
@@ -39,17 +39,17 @@ describe('fixture analysis', () => {
 });
 
 describe.each([
-  { name: 'English bold heading', line: 0, from: 'Quarterly', to: 'Annual', key: 'heading' as const },
-  { name: 'Arabic word', line: 2, from: 'السنوي', to: 'الشهري', key: 'arabic' as const },
-  { name: 'Arabic word already in the subset', line: 2, from: 'السنوي', to: 'التقرير', key: 'arabic' as const },
-  { name: 'mixed Arabic / English / digits', line: 3, from: '250 درهم لملف PDF', to: '1,499 درهم لملف Word', key: 'mixed' as const },
-])('$name', ({ line, from, to, key }) => {
+  { name: 'English bold heading', line: 0, from: 'Quarterly', to: 'Annual', key: 'heading' as const, ref: 'heading' },
+  { name: 'Arabic word', line: 2, from: 'السنوي', to: 'الشهري', key: 'arabic' as const, ref: 'arabic' },
+  { name: 'Arabic word already in the subset', line: 2, from: 'السنوي', to: 'التقرير', key: 'arabic' as const, ref: 'arabic-in-subset' },
+  { name: 'mixed Arabic / English / digits', line: 3, from: '250 درهم لملف PDF', to: '1,499 درهم لملف Word', key: 'mixed' as const, ref: 'mixed' },
+])('$name', ({ line, from, to, key, ref: refName }) => {
   let res: Awaited<ReturnType<typeof edit>>;
   let ref: Uint8Array;
   const expected = SAMPLE_LINES[key].replace(from, to);
   beforeAll(async () => {
     res = await edit(line, from, to);
-    ref = await reference({ [key]: expected });
+    ref = golden(refName);
   });
 
   it('passes qpdf --check', () => {
@@ -98,6 +98,40 @@ describe.each([
     const a = rasterise(res.out);
     const o = rasterise(sample);
     res.before.forEach((l, k) => k !== line && expect(diffRegion(a, o, l.bbox)).toBe(0));
+  });
+});
+
+describe('producer drift', () => {
+  it('reads every line of a PDF printed by the Chromium installed right now', async () => {
+    const fresh: Uint8Array = await render(sampleHtml());
+    const lines = (await PdfTextEditor.open(fresh, await nodeDeps())).lines(0);
+    expect(lines.map((l) => l.text)).toEqual(Object.values(SAMPLE_LINES));
+  });
+
+  it('keeps mark glyphs placed far from the baseline on their line', async () => {
+    // exaggerate every vertical Td (Chromium positions Arabic dots with Td)
+    const { PDFDocument, PDFName } = await import('pdf-lib');
+    const { tokenize, fmtNum } = await import('../../src/engine/lexer');
+    const doc = await PDFDocument.load(sample);
+    const page = doc.getPages()[0]!;
+    const ref = page.node.get(PDFName.of('Contents'));
+    const raw = doc.context.lookup(ref) as import('pdf-lib').PDFRawStream;
+    const { decodePDFRawStream } = await import('pdf-lib');
+    const bytes = decodePDFRawStream(raw).decode();
+    let out = '';
+    let last = 0;
+    const dec = new TextDecoder('latin1');
+    for (const op of tokenize(bytes)) {
+      if (op.op === 'Td' && op.operands[1]?.t === 'num' && op.operands[1].v !== 0 && op.operands[0]?.t === 'num') {
+        const [x, y] = [op.operands[0].v, op.operands[1].v * 1.9];
+        out += dec.decode(bytes.subarray(last, op.start)) + `${fmtNum(x)} ${fmtNum(y)} Td`;
+        last = op.end;
+      }
+    }
+    out += dec.decode(bytes.subarray(last));
+    page.node.set(PDFName.of('Contents'), doc.context.register(doc.context.flateStream(Uint8Array.from(out, (c) => c.charCodeAt(0)))));
+    const lines = (await PdfTextEditor.open(await doc.save(), await nodeDeps())).lines(0);
+    expect(lines.map((l) => l.text)).toEqual(Object.values(SAMPLE_LINES));
   });
 });
 
