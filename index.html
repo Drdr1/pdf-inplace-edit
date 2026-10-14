@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDF In-Place Text Editor</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>PDF in-place text editor</h1>
+      <p>English · Arabic · mixed lines. Everything runs in your browser — nothing is uploaded.</p>
+      <div class="bar">
+        <label class="btn">Open PDF<input id="file" type="file" accept="application/pdf" hidden /></label>
+        <button id="sample" class="btn">Load sample</button>
+        <button id="save" class="btn primary" disabled>Save PDF</button>
+        <span id="status" role="status"></span>
+      </div>
+    </header>
+    <main>
+      <div id="stage"><canvas id="canvas"></canvas><div id="overlay"></div></div>
+      <aside id="panel" hidden>
+        <h2>Edit line</h2>
+        <p class="hint">Change a word, then apply. Position, font and spacing are preserved; no reflow.</p>
+        <input id="text" dir="auto" autocomplete="off" />
+        <div class="bar"><button id="apply" class="btn primary">Apply</button><button id="cancel" class="btn">Cancel</button></div>
+        <pre id="report"></pre>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

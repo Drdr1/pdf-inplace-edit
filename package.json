@@ -1,0 +1,36 @@
+{
+  "name": "pdf-inplace-edit",
+  "version": "0.1.0",
+  "description": "In-browser, in-place text editing for existing PDFs: English, Arabic (HarfBuzz shaping, bidi) and mixed lines, keeping the original font.",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "vite",
+    "build": "tsc -p . && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p .",
+    "test:e2e": "playwright test",
+    "fixtures": "node scripts/make-fixtures.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "bidi-js": "^1.1.0",
+    "harfbuzzjs": "^1.6.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@fontsource/noto-naskh-arabic": "^5.3.0",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  },
+  "type": "module"
+}

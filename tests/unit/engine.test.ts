@@ -1,0 +1,134 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { PdfTextEditor, type LineInfo } from '../../src/engine';
+import { nodeDeps } from '../node-deps';
+import { qpdfCheck, pdftotext, rasterise, diffRegion } from '../helpers';
+// @ts-expect-error plain JS module
+import { render, sampleHtml, SAMPLE_LINES } from '../../scripts/make-fixtures.mjs';
+
+const sample = new Uint8Array(readFileSync('fixtures/sample.pdf'));
+type Lines = typeof SAMPLE_LINES;
+const reference = async (patch: Partial<Lines>): Promise<Uint8Array> => render(sampleHtml({ ...SAMPLE_LINES, ...patch })) as Promise<Uint8Array>;
+
+async function edit(lineIdx: number, from: string, to: string, deps?: Awaited<ReturnType<typeof nodeDeps>>) {
+  const ed = await PdfTextEditor.open(sample, deps ?? (await nodeDeps()));
+  const before = ed.lines(0);
+  const report = ed.replaceWord(0, lineIdx, from, to);
+  const out = await ed.save();
+  const reopened = await PdfTextEditor.open(out, await nodeDeps());
+  return { before, report, out, after: reopened.lines(0) };
+}
+
+/** poppler prints an RTL line as bidi runs; compare as a bag of words */
+function normaliseBidi(s: string): string {
+  return s.split(' ').filter(Boolean).sort().join(' ');
+}
+
+function union(a: LineInfo['bbox'], b: LineInfo['bbox']): LineInfo['bbox'] {
+  return { x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) };
+}
+
+describe('fixture analysis', () => {
+  it('reads all four lines in logical order with direction', async () => {
+    const ed = await PdfTextEditor.open(sample, await nodeDeps());
+    const lines = ed.lines(0);
+    expect(lines.map((l) => [l.text, l.dir])).toEqual([
+      [SAMPLE_LINES.heading, 'ltr'],
+      [SAMPLE_LINES.body, 'ltr'],
+      [SAMPLE_LINES.arabic, 'rtl'],
+      [SAMPLE_LINES.mixed, 'rtl'],
+    ]);
+  });
+});
+
+describe.each([
+  { name: 'English bold heading', line: 0, from: 'Quarterly', to: 'Annual', key: 'heading' as const },
+  { name: 'Arabic word', line: 2, from: 'السنوي', to: 'الشهري', key: 'arabic' as const },
+  { name: 'Arabic word already in the subset', line: 2, from: 'السنوي', to: 'التقرير', key: 'arabic' as const },
+  { name: 'mixed Arabic / English / digits', line: 3, from: '250 درهم لملف PDF', to: '1,499 درهم لملف Word', key: 'mixed' as const },
+])('$name', ({ line, from, to, key }) => {
+  let res: Awaited<ReturnType<typeof edit>>;
+  let ref: Uint8Array;
+  const expected = SAMPLE_LINES[key].replace(from, to);
+  beforeAll(async () => {
+    res = await edit(line, from, to);
+    ref = await reference({ [key]: expected });
+  });
+
+  it('passes qpdf --check', () => {
+    expect(() => qpdfCheck(res.out)).not.toThrow();
+  });
+
+  it('keeps the original font (no substitution)', () => {
+    for (const r of res.report.runs) expect(['original', 'original-extended']).toContain(r.mode);
+    expect(res.report.warnings).toEqual([]);
+  });
+
+  it('round-trips: re-opened file reads the new logical text', () => {
+    expect(res.after[line]!.text).toBe(expected);
+    // untouched lines unchanged
+    res.before.forEach((l, k) => k !== line && expect(res.after[k]!.text).toBe(l.text));
+  });
+
+  it('extracts correctly with an independent extractor (pdftotext)', () => {
+    const got = pdftotext(res.out);
+    const orig = pdftotext(sample);
+    // the edited line: exact logical text (poppler emits bidi runs; normalise word order)
+    expect(normaliseBidi(got[line]!)).toBe(normaliseBidi(expected));
+    // untouched lines: exactly what poppler extracted from the original file
+    orig.forEach((t, k) => k !== line && expect(got[k]).toBe(t));
+    void ref;
+  });
+
+  it('keeps the anchor edge (right for RTL, left for LTR)', () => {
+    const b0 = res.before[line]!.bbox;
+    const b1 = res.after[line]!.bbox;
+    if (res.before[line]!.dir === 'rtl') expect(b1.x1).toBeCloseTo(b0.x1, 1);
+    else expect(b1.x0).toBeCloseTo(b0.x0, 1);
+    expect(b1.y0).toBeCloseTo(b0.y0, 1);
+  });
+
+  it('renders like Chromium typesetting the new text (shaping, joining, order)', () => {
+    const a = rasterise(res.out);
+    const b = rasterise(ref);
+    const box = union(res.after[line]!.bbox, res.before[line]!.bbox);
+    expect(diffRegion(a, b, box)).toBeLessThan(0.08);
+  });
+
+  it('leaves every other line pixel-identical', () => {
+    const a = rasterise(res.out);
+    const o = rasterise(sample);
+    res.before.forEach((l, k) => k !== line && expect(diffRegion(a, o, l.bbox)).toBe(0));
+  });
+});
+
+describe('missing glyphs', () => {
+  it('extends the original subset when the font is identified', async () => {
+    // "Annual": A and n are not in the original "Quarterly Report Summary" subset
+    const res = await edit(0, 'Quarterly', 'Annual');
+    expect(res.report.runs[0]!.mode).toBe('original-extended');
+    expect(res.report.runs[0]!.font).toBe('AAAAAA+DejaVuSans-Bold');
+  });
+
+  it('substitutes a bundled font (and says so) when the original font is unknown', async () => {
+    // library without DejaVu: the Latin fonts cannot be identified
+    const deps = await nodeDeps(['naskh-regular', 'naskh-bold', 'dejavu-regular']);
+    const ed = await PdfTextEditor.open(sample, deps);
+    const r = ed.replaceWord(0, 0, 'Quarterly', 'Annual');
+    expect(r.runs.some((x) => x.mode === 'substitute')).toBe(true);
+    expect(r.warnings.join(' ')).toMatch(/substituted/);
+    const out = await ed.save();
+    expect(() => qpdfCheck(out)).not.toThrow();
+    expect(pdftotext(out)[0]).toBe('Annual Report Summary');
+  });
+
+  it('a second edit on an already-edited line still works', async () => {
+    const ed = await PdfTextEditor.open(sample, await nodeDeps());
+    ed.replaceWord(0, 2, 'السنوي', 'الشهري');
+    ed.replaceWord(0, 2, 'للشركة', 'للمؤسسة');
+    const out = await ed.save();
+    expect(() => qpdfCheck(out)).not.toThrow();
+    const again = await PdfTextEditor.open(out, await nodeDeps());
+    expect(again.lines(0)[2]!.text).toBe('مرحبا بكم في التقرير الشهري للمؤسسة');
+  });
+});

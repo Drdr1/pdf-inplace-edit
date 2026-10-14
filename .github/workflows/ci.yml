@@ -1,0 +1,35 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: sudo apt-get update && sudo apt-get install -y qpdf poppler-utils
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: test-results, path: test-results, if-no-files-found: ignore }
+  pages:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions: { pages: write, id-token: write }
+    environment: { name: github-pages, url: '${{ steps.deploy.outputs.page_url }}' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci && npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: dist }
+      - id: deploy
+        uses: actions/deploy-pages@v4
