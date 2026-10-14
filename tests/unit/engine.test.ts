@@ -90,6 +90,7 @@ describe.each([
     // differ slightly between Chromium versions
     const refLines = (await PdfTextEditor.open(ref, await nodeDeps())).lines(0);
     const align = res.after[line]!.dir === 'rtl' ? 'right' : 'left';
+    expect(refLines[line]!.text, `reference lines: ${JSON.stringify(refLines.map((l) => [l.text, l.fonts]))}`).toBe(expected);
     expect(diffLine(rasterise(res.out), res.after[line]!.bbox, rasterise(ref), refLines[line]!.bbox, align)).toBeLessThan(0.08);
   });
 

@@ -32,7 +32,14 @@ export async function render(html, out) {
   const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {});
   const page = await browser.newPage();
   await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>${html}</body></html>`, { waitUntil: 'load' });
-  await page.evaluate(() => document.fonts.ready);
+  // load every face explicitly; newer headless Chromium may print before lazy
+  // web fonts load, silently falling back to system fonts
+  const loaded = await page.evaluate(async () => {
+    await Promise.all([...document.fonts].map((f) => f.load()));
+    await document.fonts.ready;
+    return [...document.fonts].map((f) => `${f.family}/${f.weight}:${f.status}`);
+  });
+  if (loaded.some((x) => !x.endsWith(':loaded'))) throw new Error(`fixture fonts failed to load: ${loaded.join(', ')}`);
   const pdf = await page.pdf({ format: 'A4', printBackground: false });
   await browser.close();
   if (out) writeFileSync(out, pdf);
