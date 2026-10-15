@@ -251,6 +251,9 @@ export class PdfTextEditor {
     for (const [ref, obj] of ctx.enumerateIndirectObjects()) {
       if (this.snapshot.get(ref.toString()) !== serialise(obj)) changed.push([ref, obj]);
     }
+    // Nothing changed since the last save: an empty xref section is invalid, so
+    // return the current bytes unchanged.
+    if (changed.length === 0) return this.original.slice();
     changed.sort((a, b) => a[0].objectNumber - b[0].objectNumber);
     const enc = new TextEncoder();
     const parts: Uint8Array[] = [this.original];

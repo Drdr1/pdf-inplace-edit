@@ -112,4 +112,13 @@ describe('LibreOffice: edits', () => {
     expect(() => qpdfCheck(second)).not.toThrow();
     expect(pdftotext(second).join(' ')).toMatch(/30 pcs.*9 pcs/);
   });
+
+  it('saving again with no new edit adds nothing (no empty xref section)', async () => {
+    const ed = await PdfTextEditor.open(src, await nodeDeps());
+    ed.replaceWord(0, ed.lines(0).find((l) => l.text === '24')!.id, '24', '30');
+    const first = await ed.save();
+    const second = await ed.save();
+    expect(Buffer.from(second).equals(Buffer.from(first))).toBe(true);
+    expect(() => qpdfCheck(second)).not.toThrow();
+  });
 });
